@@ -1,0 +1,5 @@
+python-docx>=0.8.11
+PyQt5>=5.15.0
+requests>=2.25.1
+lxml>=4.6.3
+python-docx-replace>=0.3.0

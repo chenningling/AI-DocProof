@@ -1,0 +1,6 @@
+{
+    "api_url": "https://api.deepseek.com/chat/completions",
+    "model": "deepseek-chat",
+    "api_key": "sk-abaf625449894cd4ada95ed15ad1ae24",
+    "system_prompt": "作为一个细致耐心的文字秘书，对下面的句子进行错别字检查，按如下结构以 JOSN 格式输出（不要包含代码块标记）：\n{\n\"content_0\":\"原始句子\",\n\"wrong\":true,//是否有需要被修正的错别字，布尔类型\n\"annotation\":\"\",//批注内容，string类型。如果wrong为true给出修正的解释；如果 wrong 字段为 false，则为空值\n\"content_1\":\"\"//修改后的句子，string类型。如果wrong为false则留空\n}"
+}
