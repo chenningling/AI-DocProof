@@ -34,8 +34,9 @@ class DocProcessor:
         self.sentences = []
         self.sentence_positions = []  # 存储每个句子在文档中的位置信息
         
-        # 分句规则
-        self.sentence_end_pattern = r'([。？！\.\?!])["\'\'\"]?(?=$|[\s\n])'
+        # 分句规则 - 优化英文句号的处理
+        # 中文句号使用全角句号，英文句号需要更严格的匹配条件
+        self.sentence_end_pattern = r'(。？！|\.[\s\n]|\?|!)["\'\'\'"]?(?=$|[\s\n])'
         
         # 排除的特殊情况
         self.exclude_patterns = [
@@ -57,6 +58,10 @@ class DocProcessor:
             r'p\.',  # 页
             r'pp\.',  # 页
             r'et al\.',  # 等人
+            r'\w+\.\w+',  # 包含点的单词，如域名、文件名等
+            r'[A-Z]\.[A-Z]',  # 大写字母缩写，如U.S.
+            r'Ph\.D',  # 博士学位
+            r'\d+\.',  # 序号，如"1."
         ]
         
     def load_document(self, file_path=None):
@@ -117,11 +122,17 @@ class DocProcessor:
                     
                     # 检查是否是排除的特殊情况
                     is_excluded = False
+                    
+                    # 如果句子太短且以英文句号结尾，可能是错误分割
+                    if len(sentence) < 5 and sentence.endswith('.'):
+                        is_excluded = True
+                    
+                    # 检查排除模式
                     for pattern in self.exclude_patterns:
                         if re.search(pattern, sentence):
                             is_excluded = True
                             break
-                            
+                                
                     if not is_excluded and sentence:
                         self.sentences.append(sentence)
                         # 存储句子位置信息

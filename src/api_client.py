@@ -154,6 +154,11 @@ class ApiClient:
                         # 没有Markdown标记，直接解析
                         result = json.loads(content)
                     
+                    # 处理返回数组的情况
+                    if isinstance(result, list) and len(result) > 0:
+                        # 如果返回的是数组，取第一个元素
+                        result = result[0]
+                    
                     # 验证返回的JSON是否包含必要的字段
                     if all(key in result for key in ['content_0', 'wrong', 'annotation', 'content_1']):
                         return True, result
@@ -179,13 +184,15 @@ if __name__ == "__main__":
         'api_url': 'https://api.deepseek.com/chat/completions',
         'model': 'deepseek-chat',
         'api_key': 'your_api_key_here',
-        'system_prompt': """作为一个细致耐心的文字秘书，对下面的句子进行错别字检查，按如下结构以 JSON 格式输出（不要包含代码块标记）：
+        'system_prompt': """作为一个细致耐心的文字秘书，对下面的句子进行错别字检查，按如下结构以 JSON 格式输出（不要包含代码块标记，不要输出数组格式）：
 {
 "content_0":"原始句子",
 "wrong":true,//是否有需要被修正的错别字，布尔类型
 "annotation":"",//批注内容，string类型。如果wrong为true给出修正的解释；如果 wrong 字段为 false，则为空值
 "content_1":""//修改后的句子，string类型。如果wrong为false则留空
-}"""
+}
+
+注意：请直接返回单个JSON对象，不要返回JSON数组。"""
     }
     
     api_client = ApiClient(test_config)
