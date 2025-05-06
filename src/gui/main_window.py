@@ -144,7 +144,8 @@ class MainWindow(QMainWindow):
         
         # 状态变量
         self.file_path = None
-        self.last_directory = os.path.expanduser("~")  # 默认为用户主目录
+        # 默认为桌面文件夹
+        self.last_directory = os.path.join(os.path.expanduser("~"), "Desktop")
         self.worker = None
         self.is_proofreading = False
         
@@ -458,6 +459,16 @@ class MainWindow(QMainWindow):
             
             # 添加“打开”和“确定”按钮
             open_button = msg_box.addButton("打开文档", QMessageBox.ActionRole)
+            open_button.setStyleSheet("""
+                background-color: #34A853;  /* 绿色按钮 */
+                color: white;
+                border: none;
+                border-radius: 4px;
+                padding: 6px 14px;
+                font-size: 14px;
+                min-width: 80px;
+                margin: 0 3px;
+            """)
             ok_button = msg_box.addButton("确定", QMessageBox.AcceptRole)
             msg_box.setDefaultButton(ok_button)
             
