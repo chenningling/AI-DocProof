@@ -11,9 +11,11 @@ import os
 import logging
 import threading
 import time
+import subprocess
 from PyQt5.QtWidgets import (QMainWindow, QVBoxLayout, QHBoxLayout, QLabel, 
                             QPushButton, QFileDialog, QWidget, QTextEdit,
-                            QProgressBar, QMessageBox, QApplication)
+                            QProgressBar, QMessageBox, QApplication,
+                            QDialogButtonBox)
 from PyQt5.QtCore import Qt, pyqtSignal, QThread, pyqtSlot
 from PyQt5.QtGui import QFont, QIcon, QTextCursor
 
@@ -440,11 +442,49 @@ class MainWindow(QMainWindow):
         
         if success:
             self.log_text.append(f"校对完成！文档已保存至: {message}\n")
-            QMessageBox.information(self, "校对完成", f"文档校对已完成，并保存至:\n{message}")
+            
+            # 创建自定义消息框，带有“打开”按钮
+            msg_box = QMessageBox(self)
+            msg_box.setWindowTitle("校对完成")
+            msg_box.setText(f"文档校对已完成，并保存至:\n{message}")
+            msg_box.setIcon(QMessageBox.Information)
+            
+            # 添加“打开”和“确定”按钮
+            open_button = msg_box.addButton("打开文档", QMessageBox.ActionRole)
+            ok_button = msg_box.addButton("确定", QMessageBox.AcceptRole)
+            msg_box.setDefaultButton(ok_button)
+            
+            # 显示消息框并处理结果
+            msg_box.exec_()
+            
+            # 如果点击了“打开”按钮
+            if msg_box.clickedButton() == open_button:
+                self.open_document(message)
         else:
             self.log_text.append(f"校对失败: {message}\n")
             QMessageBox.warning(self, "校对失败", f"文档校对失败: {message}")
             
+    def open_document(self, file_path):
+        """
+        打开文档
+        
+        Args:
+            file_path: 文档路径
+        """
+        try:
+            # 根据不同的操作系统使用不同的命令打开文档
+            if sys.platform == 'darwin':  # macOS
+                subprocess.run(['open', file_path], check=True)
+            elif sys.platform == 'win32':  # Windows
+                os.startfile(file_path)
+            else:  # Linux
+                subprocess.run(['xdg-open', file_path], check=True)
+                
+            self.log_text.append(f"已打开文档: {file_path}\n")
+        except Exception as e:
+            self.log_text.append(f"打开文档失败: {str(e)}\n")
+            QMessageBox.warning(self, "打开失败", f"无法打开文档: {str(e)}")
+    
     def show_export_dialog(self):
         """显示导出对话框"""
         dialog = ExportDialog(self.file_path, self)
