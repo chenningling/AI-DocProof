@@ -279,7 +279,7 @@ class DocProcessor:
             
             # 添加高亮显示的批注内容
             comment_run = paragraph.add_run(f"[校对建议: {comment_text}]")
-            comment_run.font.color.rgb = RGBColor(0, 0, 255)  # 蓝色
+            comment_run.font.color.rgb = RGBColor(255, 107, 107)  # 珊瑚红 #FF6B6B
             comment_run.font.bold = True  # 加粗
             comment_run.font.italic = True  # 斜体
             

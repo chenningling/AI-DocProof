@@ -38,18 +38,20 @@ class ProofreadWorker(QThread):
     logUpdated = pyqtSignal(str)  # 日志更新
     finished = pyqtSignal(bool, str)  # 是否成功，保存路径或错误信息
     
-    def __init__(self, file_path, config, parent=None):
+    def __init__(self, file_path, config, log_manager, parent=None):
         """
         初始化校对工作线程
         
         Args:
             file_path: 文档路径
             config: API配置
+            log_manager: 日志管理器实例
             parent: 父对象
         """
         super().__init__(parent)
         self.file_path = file_path
         self.config = config
+        self.log_manager = log_manager  # 使用传入的日志管理器
         self.is_running = True
         
     def run(self):
@@ -58,7 +60,7 @@ class ProofreadWorker(QThread):
             # 初始化组件
             doc_processor = DocProcessor(self.file_path)
             api_client = ApiClient(self.config)
-            log_manager = LogManager()
+            # 使用传入的日志管理器而不是创建新的实例
             
             # 加载文档
             if not doc_processor.load_document():
@@ -72,7 +74,7 @@ class ProofreadWorker(QThread):
                 return
                 
             # 开始记录日志
-            log_manager.start_logging()
+            self.log_manager.start_logging()
             
             # 校对每个句子
             total = len(sentences)
@@ -94,13 +96,13 @@ class ProofreadWorker(QThread):
                         # 添加批注
                         doc_processor.add_comment(i, result['annotation'])
                         # 记录日志
-                        log_text = log_manager.log_sentence(sentence, result, True)
+                        log_text = self.log_manager.log_sentence(sentence, result, True)
                     else:
                         # 记录日志
-                        log_text = log_manager.log_sentence(sentence, result, False)
+                        log_text = self.log_manager.log_sentence(sentence, result, False)
                 else:
                     # 记录错误
-                    log_text = log_manager.log_error(sentence, result)
+                    log_text = self.log_manager.log_error(sentence, result)
                     
                 # 发送日志更新信号
                 self.logUpdated.emit(log_text)
@@ -113,7 +115,7 @@ class ProofreadWorker(QThread):
             
             if success:
                 # 完成日志记录
-                summary = log_manager.finish_logging(save_path)
+                summary = self.log_manager.finish_logging(save_path)
                 self.logUpdated.emit(summary)
                 self.finished.emit(True, save_path)
             else:
@@ -142,6 +144,7 @@ class MainWindow(QMainWindow):
         
         # 状态变量
         self.file_path = None
+        self.last_directory = os.path.expanduser("~")  # 默认为用户主目录
         self.worker = None
         self.is_proofreading = False
         
@@ -305,15 +308,18 @@ class MainWindow(QMainWindow):
         
     def select_file(self):
         """选择文档文件"""
+        # 使用上次选择的目录作为初始目录
         file_path, _ = QFileDialog.getOpenFileName(
             self,
             "选择Word文档",
-            "",
+            self.last_directory,  # 使用上次选择的目录
             "Word文档 (*.docx *.doc)"
         )
         
         if file_path:
             self.file_path = file_path
+            # 更新上次选择的目录
+            self.last_directory = os.path.dirname(file_path)
             self.file_path_label.setText(os.path.basename(file_path))
             self.start_button.setEnabled(True)
             self.log_text.append(f"已选择文档: {file_path}\n")
@@ -388,8 +394,9 @@ class MainWindow(QMainWindow):
         self.export_button.setEnabled(False)
         self.progress_bar.setValue(0)
         
-        # 创建工作线程
-        self.worker = ProofreadWorker(self.file_path, config)
+        # 创建并启动校对线程
+        # 将主窗口的日志管理器传给校对线程
+        self.worker = ProofreadWorker(self.file_path, self.config_manager.get_config(), self.log_manager)
         self.worker.progressUpdated.connect(self.update_progress)
         self.worker.logUpdated.connect(self.update_log)
         self.worker.finished.connect(self.proofreading_finished)
@@ -503,7 +510,34 @@ class MainWindow(QMainWindow):
         
         if success:
             self.log_text.append(f"日志已导出至: {file_path}\n")
-            QMessageBox.information(self, "导出成功", f"日志已导出至:\n{file_path}")
+            
+            # 创建自定义消息框，带有“打开”按钮
+            msg_box = QMessageBox(self)
+            msg_box.setWindowTitle("导出成功")
+            msg_box.setText(f"日志已导出至:\n{file_path}")
+            msg_box.setIcon(QMessageBox.Information)
+            
+            # 添加“打开”和“确定”按钮
+            open_button = msg_box.addButton("打开日志", QMessageBox.ActionRole)
+            open_button.setStyleSheet("""
+                background-color: #34A853;  /* 绿色按钮 */
+                color: white;
+                border: none;
+                border-radius: 4px;
+                padding: 6px 14px;
+                font-size: 14px;
+                min-width: 80px;
+                margin: 0 3px;
+            """)
+            ok_button = msg_box.addButton("确定", QMessageBox.AcceptRole)
+            msg_box.setDefaultButton(ok_button)
+            
+            # 显示消息框并处理结果
+            msg_box.exec_()
+            
+            # 如果点击了“打开”按钮
+            if msg_box.clickedButton() == open_button:
+                self.open_document(file_path)
         else:
             self.log_text.append(f"导出日志失败: {message}\n")
             QMessageBox.warning(self, "导出失败", f"导出日志失败: {message}")
