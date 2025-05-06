@@ -9,7 +9,8 @@ API客户端模块
 import json
 import logging
 import requests
-from requests.exceptions import RequestException
+import time
+from requests.exceptions import RequestException, Timeout, ConnectionError
 
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -96,85 +97,109 @@ class ApiClient:
         if not sentence.strip():
             return False, "句子为空，跳过校对"
             
-        try:
-            headers = {
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {self.api_key}"
-            }
-            
-            data = {
-                "model": self.model,
-                "messages": [
-                    {"role": "system", "content": self.system_prompt},
-                    {"role": "user", "content": sentence}
-                ],
-                "stream": False
-            }
-            
-            logger.info(f"发送API请求: {json.dumps(data, ensure_ascii=False)}")
-            
-            response = requests.post(
-                self.api_url,
-                headers=headers,
-                json=data,
-                timeout=30
-            )
-            
-            if response.status_code != 200:
-                logger.error(f"API请求失败，状态码: {response.status_code}, 响应: {response.text}")
-                return False, f"API请求失败，状态码: {response.status_code}"
+        # 设置重试参数
+        max_retries = 3  # 最大重试次数
+        retry_delay = 2  # 重试间隔（秒）
+        timeout_value = 60  # 超时时间（秒）
+        
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.api_key}"
+        }
+        
+        data = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": self.system_prompt},
+                {"role": "user", "content": sentence}
+            ],
+            "stream": False
+        }
+        
+        logger.info(f"发送API请求: {json.dumps(data, ensure_ascii=False)}")
+        
+        # 实现重试机制
+        for retry in range(max_retries):
+            try:
+                response = requests.post(
+                    self.api_url,
+                    headers=headers,
+                    json=data,
+                    timeout=timeout_value
+                )
                 
-            response_data = response.json()
-            logger.info(f"API响应: {json.dumps(response_data, ensure_ascii=False)}")
-            
-            # 提取API返回的内容
-            if 'choices' in response_data and len(response_data['choices']) > 0:
-                content = response_data['choices'][0]['message']['content']
+                if response.status_code != 200:
+                    logger.error(f"API请求失败，状态码: {response.status_code}, 响应: {response.text}")
+                    return False, f"API请求失败，状态码: {response.status_code}"
+                    
+                response_data = response.json()
+                logger.info(f"API响应: {json.dumps(response_data, ensure_ascii=False)}")
                 
-                # 尝试解析JSON响应
-                try:
-                    # 检查是否包含Markdown代码块标记
-                    if content.strip().startswith('```') and '```' in content.strip()[3:]:
-                        # 提取代码块中的JSON内容
-                        content_parts = content.strip().split('```')
-                        if len(content_parts) >= 3:
-                            # 提取中间部分（JSON内容）
-                            json_content = content_parts[1]
-                            # 如果以'json'开头，去掉它
-                            if json_content.startswith('json'):
-                                json_content = json_content[4:].strip()
+                # 提取API返回的内容
+                if 'choices' in response_data and len(response_data['choices']) > 0:
+                    content = response_data['choices'][0]['message']['content']
+                    
+                    # 尝试解析JSON响应
+                    try:
+                        # 检查是否包含Markdown代码块标记
+                        if content.strip().startswith('```') and '```' in content.strip()[3:]:
+                            # 提取代码块中的JSON内容
+                            content_parts = content.strip().split('```')
+                            if len(content_parts) >= 3:
+                                # 提取中间部分（JSON内容）
+                                json_content = content_parts[1]
+                                # 如果以'json'开头，去掉它
+                                if json_content.startswith('json'):
+                                    json_content = json_content[4:].strip()
+                                else:
+                                    json_content = json_content.strip()
+                                # 尝试解析提取的JSON
+                                result = json.loads(json_content)
                             else:
-                                json_content = json_content.strip()
-                            # 尝试解析提取的JSON
-                            result = json.loads(json_content)
+                                # 如果分割后的部分不足3个，尝试直接解析
+                                result = json.loads(content)
                         else:
-                            # 如果分割后的部分不足3个，尝试直接解析
+                            # 没有Markdown标记，直接解析
                             result = json.loads(content)
-                    else:
-                        # 没有Markdown标记，直接解析
-                        result = json.loads(content)
+                        
+                        # 处理返回数组的情况
+                        if isinstance(result, list) and len(result) > 0:
+                            # 如果返回的是数组，取第一个元素
+                            result = result[0]
+                        
+                        # 验证返回的JSON是否包含必要的字段
+                        if all(key in result for key in ['content_0', 'wrong', 'annotation', 'content_1']):
+                            return True, result
+                        else:
+                            logger.error(f"API返回的JSON格式不符合预期: {content}")
+                            return False, f"API返回的JSON格式不符合预期: {content}"
+                    except json.JSONDecodeError as e:
+                        logger.error(f"API返回的内容不是有效的JSON: {content}, 错误: {str(e)}")
+                        return False, f"API返回的内容不是有效的JSON: {content}"
+                else:
+                    logger.error(f"API响应中没有找到有效内容: {response_data}")
+                    return False, f"API响应中没有找到有效内容"
                     
-                    # 处理返回数组的情况
-                    if isinstance(result, list) and len(result) > 0:
-                        # 如果返回的是数组，取第一个元素
-                        result = result[0]
-                    
-                    # 验证返回的JSON是否包含必要的字段
-                    if all(key in result for key in ['content_0', 'wrong', 'annotation', 'content_1']):
-                        return True, result
-                    else:
-                        logger.error(f"API返回的JSON格式不符合预期: {content}")
-                        return False, f"API返回的JSON格式不符合预期: {content}"
-                except json.JSONDecodeError as e:
-                    logger.error(f"API返回的内容不是有效的JSON: {content}, 错误: {str(e)}")
-                    return False, f"API返回的内容不是有效的JSON: {content}"
-            else:
-                logger.error(f"API响应中没有找到有效内容: {response_data}")
-                return False, f"API响应中没有找到有效内容"
+            except (Timeout, ConnectionError) as e:
+                # 超时或连接错误，进行重试
+                retry_count = retry + 1
+                if retry_count < max_retries:
+                    logger.warning(f"API请求超时或连接错误，正在进行第{retry_count}次重试: {str(e)}")
+                    time.sleep(retry_delay * (retry + 1))  # 指数退避策略
+                    continue
+                else:
+                    logger.error(f"API请求失败，已重试{max_retries}次: {str(e)}")
+                    return False, f"API请求失败，已重试{max_retries}次: {str(e)}"
+            
+            except Exception as e:
+                logger.error(f"校对句子时发生错误: {str(e)}")
+                return False, f"校对句子时发生错误: {str(e)}"
                 
-        except Exception as e:
-            logger.error(f"校对句子时发生错误: {str(e)}")
-            return False, f"校对句子时发生错误: {str(e)}"
+            # 如果执行到这里，说明请求成功，跳出重试循环
+            break
+            
+        # 如果所有重试都失败，返回错误
+        return False, "所有API请求尝试均失败"
 
 
 # 测试代码
